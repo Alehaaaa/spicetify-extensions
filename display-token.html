@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Token Retriever</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #1db954; } /* Spotify Green */
+        pre {
+            background-color: #eee;
+            padding: 15px;
+            border-radius: 4px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            border: 1px solid #ddd;
+            font-size: 0.9em;
+        }
+        .instructions { margin-top: 15px; font-size: 0.95em; }
+        .note { font-size: 0.8em; color: #555; margin-top:20px;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Authentication Token</h1>
+        <p class="instructions">Please copy the entire Access Token displayed below. Then, paste it into the input field in the Spicetify Lyrics Reporter dialog.</p>
+        <pre id="token-display">Extracting token...</pre>
+        <p class="note">You can close this browser tab after copying the token.</p>
+    </div>
+
+    <script>
+        function displayToken() {
+            const tokenDisplay = document.getElementById('token-display');
+            if (window.location.hash) {
+                const params = new URLSearchParams(window.location.hash.substring(1)); // Remove '#'
+                const accessToken = params.get('access_token');
+                const error = params.get('error');
+                const errorDescription = params.get('error_description');
+
+                if (accessToken) {
+                    tokenDisplay.textContent = accessToken;
+                } else if (error) {
+                    tokenDisplay.textContent = `Error: ${error}\nDescription: ${errorDescription || 'No description provided.'}`;
+                    tokenDisplay.style.color = 'red';
+                } else {
+                    tokenDisplay.textContent = 'Access Token or Error not found in URL hash. Please ensure you were redirected here correctly after authorizing the application.';
+                }
+            } else {
+                tokenDisplay.textContent = 'No token information found in the URL. Please ensure you were redirected from Discord.';
+            }
+        }
+        window.onload = displayToken;
+    </script>
+</body>
+</html>

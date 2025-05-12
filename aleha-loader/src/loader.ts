@@ -20,8 +20,10 @@ const GH_USER = 'Alehaaaa';
 const GH_REPO = 'spicetify-extensions';
 const GH_BRANCH = 'main';
 
-const API_ROOT = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/extensions/aleha-loader`;
-const RAW_ROOT = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}/extensions/aleha-loader`;
+const EXTENSION = 'aleha-loader';
+
+const API_ROOT = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${EXTENSION}/extensions`;
+const RAW_ROOT = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}/${EXTENSION}/extensions`;
 
 const STORE_KEY = 'LoaderStates';
 

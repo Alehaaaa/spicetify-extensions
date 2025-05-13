@@ -5,7 +5,7 @@
  */
 /* eslint-disable no-eval */
 
-import { SettingsSection } from 'spcr-settings';
+import { SettingsSection } from './customSettings/settingsSection';
 import type { ChangeEvent } from 'react';
 
 interface ExtensionMeta {

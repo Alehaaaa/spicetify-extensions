@@ -237,11 +237,10 @@ const LOG_PREFIX = '[SearchModalQueue]';
 					break;
 	
 				case 'album':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`);
-					await Spicetify.Platform.AlbumAPI.getContents(selectedInfo.toURI()).then(data => {
-						tracks = data.items
+					await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`).then(info => {
+						tracks = info.tracks.items
 						title = `“${info.name}” by ${info.artists[0].name} (Album) - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
-					})
+					});
 					break;
 	
 				case 'playlist':

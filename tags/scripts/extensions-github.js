@@ -8,6 +8,7 @@ const { name } = require('../package.json');
 const destDir = path.join(
   os.homedir(),
   'Documents',
+  'Programming',
   'GitHub',
   'spicetify-extensions',
   'aleha-loader',
@@ -17,7 +18,7 @@ const destDir = path.join(
 // ── Exit early if the folder is missing ────────────────────────────────
 if (!fs.existsSync(destDir)) {
   console.error('[copy] destination not found:', destDir);
-  process.exit(1);            // non-zero exit → npm marks the script as failed
+  process.exit(1);
 }
 
 // ----------------------------------------------------------------------

@@ -158,7 +158,7 @@ function handleImgClick(
 // Tag creation / removal
 // ──────────────────────────────────────────────────────────────────────────
 async function removeTags(): Promise<void> {
-	const target = await waitForElement('.main-nowPlayingWidget-nowPlaying .main-trackInfo-enhanced');
+	const target = await waitForElement('.main-nowPlayingWidget-nowPlaying .main-trackInfo-enhanced > .playing-tags');
 	target.remove();
 }
 

@@ -4,13 +4,14 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+const { createRoot } = Spicetify.ReactDOM;
+
 
 declare global {
 	interface Window { operatingSystem: string | null }
 }
 
-console.log('[Track Tags] loaded');
+console.log('[Track Tags] extension loaded');
 
 // ──────────────────────────────────────────────────────────────────────────
 // Generic async helpers
@@ -98,7 +99,11 @@ function confirmDialog(
 		portal.className = 'ReactModalPortal';
 		document.body.appendChild(portal);
 
+		// Create the root once
+		const root = createRoot(portal);
+
 		const destroy = () => {
+			// Use root.unmount() for React 18
 			root.unmount();
 			portal.remove();
 		};
@@ -123,7 +128,7 @@ function confirmDialog(
 			},
 		};
 
-		const root = createRoot(portal);
+		// Render the component using the root
 		root.render(React.createElement(Spicetify.ReactComponent.ConfirmDialog, allProps));
 	});
 }
@@ -185,13 +190,13 @@ async function addTags(): Promise<{
 	const playlistSpan = document.createElement('span');
 	playlistSpan.className = 'Wrapper-sm-only Wrapper-small-only';
 	const playlistImg = document.createElement('img');
-  playlistImg.setAttribute('width',  '14');
-  playlistImg.setAttribute('height', '14');
-  playlistImg.classList.add(
-    'Svg-img-icon-small-textBrightAccent',
-    'playing-playlist-tag'
-  );
-  playlistSpan.appendChild(playlistImg);
+	playlistImg.setAttribute('width', '14');
+	playlistImg.setAttribute('height', '14');
+	playlistImg.classList.add(
+		'Svg-img-icon-small-textBrightAccent',
+		'playing-playlist-tag'
+	);
+	playlistSpan.appendChild(playlistImg);
 
 	// Heart
 	const savedTrackSpan = document.createElement('span');
@@ -200,9 +205,13 @@ async function addTags(): Promise<{
 	const heartSvgNS = 'http://www.w3.org/2000/svg';
 	const heartSvg = document.createElementNS(heartSvgNS, 'svg');
 	heartSvg.setAttribute('viewBox', '0 0 24 24');
-  heartSvg.setAttribute('width',  '14');
-  heartSvg.setAttribute('height', '14');
-	heartSvg.classList.add('Svg-img-icon-small-textBrightAccent playing-playlist-tag playing-heart-tag');
+	heartSvg.setAttribute('width', '14');
+	heartSvg.setAttribute('height', '14');
+	heartSvg.classList.add(
+		'Svg-img-icon-small-textBrightAccent',
+		'playing-playlist-tag',
+		'playing-heart-tag'
+	);
 	const heartPath = document.createElementNS(heartSvgNS, 'path');
 	heartPath.setAttribute(
 		'd',
@@ -224,8 +233,11 @@ async function addTags(): Promise<{
 	dlSvg.dataset.encoreId = 'icon';
 	dlSvg.setAttribute('role', 'img');
 	dlSvg.setAttribute('aria-hidden', 'false');
-	dlSvg.classList.add('Svg-img-icon-small-textBrightAccent playing-playlist-tag playing-downloaded-tag');
-	const dlPath = document.createElementNS(heartSvgNS, 'path');
+	dlSvg.classList.add(
+		'Svg-img-icon-small-textBrightAccent',
+		'playing-playlist-tag',
+		'playing-downloaded-tag'
+	); const dlPath = document.createElementNS(heartSvgNS, 'path');
 	dlPath.setAttribute(
 		'd',
 		'M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-4.75a.75.75 0 0 0-.75.75v5.94L6.055 8.744a.75.75 0 1 0-1.06 1.06L8 12.811l3.005-3.006a.75.75 0 1 0-1.06-1.06L8.75 9.939V4A.75.75 0 0 0 8 3.25z'
@@ -354,45 +366,67 @@ async function displayTags(
 // ──────────────────────────────────────────────────────────────────────────
 // Initialisation
 // ──────────────────────────────────────────────────────────────────────────
+let explicitContainerSpan: HTMLSpanElement | undefined;
+let playlistSpan: HTMLSpanElement | undefined;
+let savedTrackSpan: HTMLSpanElement | undefined;
+let downloadedSpan: HTMLSpanElement | undefined;
+let separator: HTMLSpanElement | undefined;
+let lastPlayerState: { item?: string; context?: string } = {};
+
+
 async function initializeTags(): Promise<void> {
 	await waitForSpicetify();
 
-	const initialTags = await addTags();
-	if (!initialTags) return;
+	const initialElements = await addTags();
+	if (!initialElements) {
+		console.error("Failed to add initial tags. Aborting initialization.");
+		return;
+	}
+	({ explicitContainerSpan, playlistSpan, savedTrackSpan, downloadedSpan, separator } = initialElements);
 
-	let { explicitContainerSpan, playlistSpan, savedTrackSpan, downloadedSpan, separator } = initialTags;
-	let last: { item?: string; context?: string } = {};
 
 	const update = async () => {
+		if (
+			!explicitContainerSpan?.isConnected ||
+			!playlistSpan?.isConnected ||
+			!savedTrackSpan?.isConnected ||
+			!downloadedSpan?.isConnected ||
+			!separator?.isConnected
+		) {
+			console.warn("Tags not connected to DOM. Attempting to re-add.");
+			await removeTags(); // Clean up any old, disconnected elements
+			const freshElements = await addTags();
+			if (!freshElements) {
+				console.error("Failed to re-add tags. Cannot update.");
+				return;
+			}
+			({ explicitContainerSpan, playlistSpan, savedTrackSpan, downloadedSpan, separator } = freshElements);
+		}
+
 		const state = await Spicetify.Platform.PlayerAPI.getState();
 		if (!state?.context) {
 			await removeTags();
+			lastPlayerState = {}; // Reset last state
 			return;
 		}
+
 		const current = { item: state.item?.uri, context: state.context?.uri };
-		if (JSON.stringify(current) !== JSON.stringify(last)) {
-			last = current;
-			if (
-				!explicitContainerSpan.isConnected ||
-				!playlistSpan.isConnected ||
-				!savedTrackSpan.isConnected ||
-				!downloadedSpan.isConnected ||
-				!separator.isConnected
-			) {
-				const fresh = await addTags();
-				if (!fresh) return;
-				({
-					explicitContainerSpan,
-					playlistSpan,
-					savedTrackSpan,
-					downloadedSpan,
-					separator,
-				} = fresh);
-			}
-			await displayTags(state, explicitContainerSpan, playlistSpan, savedTrackSpan, downloadedSpan, separator);
+
+		// Only update if the item or context has actually changed
+		if (JSON.stringify(current) !== JSON.stringify(lastPlayerState)) {
+			lastPlayerState = current; // Update last state
+			await displayTags(
+				state,
+				explicitContainerSpan!,
+				playlistSpan!,
+				savedTrackSpan!,
+				downloadedSpan!,
+				separator!
+			);
 		}
 	};
 
+	// Listen for song changes
 	Spicetify.Player.addEventListener('songchange', () => setTimeout(update, 1));
 
 	if (window.operatingSystem === 'Windows') {
@@ -401,6 +435,7 @@ async function initializeTags(): Promise<void> {
 		update();
 	}
 
+	// Append CSS
 	document.head.appendChild(await tagCSS());
 }
 
@@ -411,8 +446,6 @@ async function main(): Promise<void> {
 	await initializeTags();
 }
 
-// Run immediately for convenience in dev builds
 main().catch((e) => console.error('[Track Tags] fatal error', e));
 
-// Export for Spicetify loader
 export default main;

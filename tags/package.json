@@ -11,9 +11,12 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/react": "^19.1.6",
-    "@types/react-dom": "^19.1.5",
+    "@types/react": "^17.0.0",
+    "@types/react-dom": "^17.0.0",
     "shx": "^0.4.0",
     "spicetify-creator": "^1.0.17"
+  },
+  "dependencies": {
+    "react-dom": "^19.1.0"
   }
 }

@@ -5,7 +5,7 @@ const os   = require('os');
 
 const { name } = require('../package.json');
 
-const destDir = path.join(
+let destDir = path.join(
   os.homedir(),
   'Documents',
   'Programming',
@@ -14,6 +14,16 @@ const destDir = path.join(
   'aleha-loader',
   'extensions'
 );
+if (!fs.existsSync(destDir)) {
+  destDir = path.join(
+  os.homedir(),
+  'Documents',
+  'GitHub',
+  'spicetify-extensions',
+  'aleha-loader',
+  'extensions'
+);
+}
 
 // ── Exit early if the folder is missing ────────────────────────────────
 if (!fs.existsSync(destDir)) {

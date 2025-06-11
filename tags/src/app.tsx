@@ -405,10 +405,6 @@ const update = async () => {
     }
     const targetParent = playingTagsWrapper.parentElement || await waitForElement<'div'>('.main-nowPlayingWidget-nowPlaying .main-trackInfo-enhanced');
 
-    if (playingTagsWrapper.isConnected && targetParent) {
-        playingTagsWrapper.remove();
-    }
-
     const state = await Spicetify.Platform.PlayerAPI.getState();
     const current = { item: state.item?.uri, context: state.context?.uri };
 

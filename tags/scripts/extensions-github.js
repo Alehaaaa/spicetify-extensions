@@ -1,29 +1,25 @@
-// scripts/extensions-github.js
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
-const os   = require('os');
-
 const { name } = require('../package.json');
 
-let destDir = path.join(
-  os.homedir(),
-  'Documents',
-  'Programming',
-  'GitHub',
-  'spicetify-extensions',
-  'aleha-loader',
-  'extensions'
-);
-if (!fs.existsSync(destDir)) {
-  destDir = path.join(
-  os.homedir(),
-  'Documents',
-  'GitHub',
-  'spicetify-extensions',
-  'aleha-loader',
-  'extensions'
-);
+const currentFilePath = __filename;
+
+const pathParts = currentFilePath.split(path.sep);
+const tagIndex = pathParts.indexOf('tags');
+
+if (tagIndex === -1) {
+  console.error('[error] "tags" folder not found in path:', currentFilePath);
+  process.exit(1);
 }
+
+// Reconstruct path up to 'tags' (excluding)
+const gitHub = path.join(...pathParts.slice(0, tagIndex));
+
+const destDir = path.join(
+  gitHub,
+  'aleha-loader',
+  'extensions'
+);
 
 // ── Exit early if the folder is missing ────────────────────────────────
 if (!fs.existsSync(destDir)) {

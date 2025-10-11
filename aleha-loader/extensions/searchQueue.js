@@ -44,16 +44,20 @@
  * @property {object} URI - Object containing URI utility functions. */
 
 
+
 // --- Tell TypeScript Spicetify exists on window ---
 /** @type {Window & typeof globalThis & { Spicetify: SpicetifyAPI }} */
 
 const typedWindow = /** @type {any} */ (window);
 const LOG_PREFIX = '[SearchModalQueue]';
 
+const { Spicetify } = /** @type {{ Spicetify: any }} */ (typedWindow);
+const SpicetifyAny = /** @type {any} */ (Spicetify);
+
 
 (function searchModalQueue() {
 	const { Spicetify } = typedWindow; // Use the typed window
-	if (!Spicetify || !Spicetify.Player || !Spicetify.CosmosAsync) {
+	if (!Spicetify || !Spicetify.Player || !SpicetifyAny.CosmosAsync) {
 		// console.warn(LOG_PREFIX, "Spicetify not ready, trying again in 500ms.");
 		setTimeout(searchModalQueue, 500);
 		return;
@@ -181,10 +185,10 @@ const LOG_PREFIX = '[SearchModalQueue]';
 		}, duration);
 	}
 
-	const SEARCH_MODAL_SELECTOR = 'div[role="dialog"] #search-modal-listbox'; // More specific selector for the modal containing the listbox
-	const ACCESSIBILITY_BAR_SELECTOR = '.search-modal-keyboard-accessibility-bar';
-	const SELECTED_ITEM_SELECTOR = '.search-modal-resultItem[aria-selected="true"]';
-	const HINT_ID = 'search-modal-queue-hint'; // ID to prevent duplicate hints
+	const SEARCH_MODAL_SELECTOR = 'div[role="dialog"][aria-label="Search"] #search-modal-listbox';
+	const ACCESSIBILITY_BAR_SELECTOR = 'div[role="dialog"][aria-label="Search"] .iIaWJ3qSDLsKHwNCvv_g'; // new hint bar
+	const SELECTED_ITEM_SELECTOR = 'a[role="option"][aria-selected="true"]';
+	const HINT_ID = 'search-modal-queue-hint';
 
 	/** @type {MutationObserver | null} */
 	let observer = null;
@@ -206,12 +210,14 @@ const LOG_PREFIX = '[SearchModalQueue]';
 
 		const href = selectedItem.getAttribute('href');
 		if (href) {
-			uri = Spicetify.URI.from(href)
+			uri = SpicetifyAny.URI.from(href)
 		};
 		return uri;
 	}
 
+	/** @param {any} showNotification */
 	async function handleCtrlEnter(showNotification) {
+		/** @type {any} */
 		const selectedInfo = getSelectedUriAndTitle();
 		if (!selectedInfo) {
 			// console.log(LOG_PREFIX, "No selected item found.");
@@ -219,25 +225,26 @@ const LOG_PREFIX = '[SearchModalQueue]';
 		}
 
 		try {
+			/** @type {any} */
 			let info
 			let tracks = []
 			let title = ''; // Initialize title
 
 			switch (selectedInfo.type) {
 				case 'track':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${selectedInfo.id}`);
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${selectedInfo.id}`);
 					tracks = [{ uri: selectedInfo.toURI() }];
 					title = `“${info.name}” by ${info.artists[0].name} (Track)`;
 					break;
 	
 				case 'episode':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/episodes/${selectedInfo.id}`);
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/episodes/${selectedInfo.id}`);
 					tracks = [{ uri: selectedInfo.toURI() }];
-					title = `“${selectedInfo.name}” (Episode)`;
+					title = `“${info.name}” (Episode)`;
 					break;
 	
 				case 'album':
-					await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`).then(info => {
+					SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`).then(/** @param {any} info */ info => {
 						tracks = info.tracks.items
 						title = `“${info.name}” by ${info.artists[0].name} (Album) - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
 					});
@@ -245,32 +252,32 @@ const LOG_PREFIX = '[SearchModalQueue]';
 	
 				case 'playlist':
 				case 'playlist-v2':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${selectedInfo.id}/`);
-					await Spicetify.Platform.PlaylistAPI.getContents(selectedInfo.toURI()).then(data => {
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${selectedInfo.id}/`);
+					await SpicetifyAny.Platform.PlaylistAPI.getContents(selectedInfo.toURI()).then(/** @param {any} data */ data => {
 						tracks = data.items
 						title = `“${info.name}” by ${info.owner.display_name} (Playlist) - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
 					})
 					break;
 	
 				case 'show':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/shows/${selectedInfo.id}/`);
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/shows/${selectedInfo.id}/`);
 					tracks = await fetchPages(`shows/${selectedInfo.id}/episodes?limit=50`);
 					tracks.reverse()
 					title = `“${info.name}” (Show) - ${tracks.length} episode${tracks.length > 1 ? 's' : ''}`;
 					break;
 	
 				case 'artist':
-					info = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists/${selectedInfo.id}/`);
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/artists/${selectedInfo.id}/`);
 					try {
 						// Try playlist "This Is [Artist]"
 						const query = encodeURIComponent(`This Is ${info.name}`);
-						const search = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/search?q=${query}&type=playlist&limit=1`);
+						const search = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/search?q=${query}&type=playlist&limit=1`);
 						const thisIsPlaylist = search?.playlists?.items?.[0];
 				
 						if (thisIsPlaylist) {
 							const playlistId = thisIsPlaylist.id;
-							const playlistData = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${playlistId}`);
-							const playlistTracks = playlistData.tracks.items.map(item => item.track).filter(Boolean);
+							const playlistData = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${playlistId}`);
+							const playlistTracks = playlistData.tracks.items.map(/** @param {any} item */ item => item.track).filter(Boolean);
 				
 							tracks = playlistTracks;
 							title = `"${thisIsPlaylist.name}" by ${playlistData.owner.display_name} (Playlist) - ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`;
@@ -304,15 +311,16 @@ const LOG_PREFIX = '[SearchModalQueue]';
 	}
 
 	// helper to page through Spotify’s paginated endpoints
+	/** @param {string} u */
 	async function fetchPages(u) {
 		const allTracks = [];
 		let url = `https://api.spotify.com/v1/${u}`;
 		console.log("Fetching:", url);
 		while (url) {
 			try {
-				const data = await Spicetify.CosmosAsync.get(url);
+				const data = await SpicetifyAny.CosmosAsync.get(url);
 				if (!data) break;
-				const tracks = data.tracks || (data.items && data.items.map(i => i.track || i)) || [];
+				const tracks = data.tracks || (data.items && data.items.map(/** @param {any} i */ i => i.track || i)) || [];
 				if (!tracks.length) break;
 				allTracks.push(...tracks);
 				url = data.next;
@@ -365,41 +373,35 @@ const LOG_PREFIX = '[SearchModalQueue]';
 	// --- UI Modification ---
 
 	function addQueueHint() {
-		const accessibilityBar = document.querySelector(ACCESSIBILITY_BAR_SELECTOR);
-		if (!accessibilityBar || document.getElementById(HINT_ID)) {
-			// Bar not found or hint already added
-			return;
-		}
+		const bar = document.querySelector(ACCESSIBILITY_BAR_SELECTOR);
+		if (!bar || document.getElementById(HINT_ID)) return;
 
-		// console.log(LOG_PREFIX, "Adding 'Queue' hint.");
+		// Find any existing <p> in the bar to copy its style and class list
+		const sample = bar.querySelector("p");
+		if (!sample) return;
 
-		const queueHint = document.createElement('p');
+		const queueHint = document.createElement("p");
 		queueHint.id = HINT_ID;
-		queueHint.className = "e-9800-text encore-text-body-small encore-internal-color-text-subdued"; // Match existing style
-		queueHint.dataset.encoreId = "text";
-		queueHint.style.display = "flex";
-		queueHint.style.alignItems = "center";
-		queueHint.style.gap = "0";
 
-		// Create KBD elements for better styling consistency
-		const ctrlKbd = document.createElement('kbd');
-		ctrlKbd.className = "e-9800-text encore-text-body-small encore-internal-color-text-base c4hmXDjs2Dv8n3VCLz1g"; // Match existing style
-		ctrlKbd.dataset.encoreId = "text";
-		ctrlKbd.textContent = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? 'Cmd' : 'Ctrl'; // Use Cmd on Mac
+		// Copy classes, data attributes, and inline styles from existing hint
+		queueHint.className = sample.className;
+		queueHint.dataset.encoreId = sample.dataset.encoreId;
+		if (sample.style.cssText) queueHint.style.cssText = sample.style.cssText;
 
-		const enterKbd = document.createElement('kbd');
-		enterKbd.className = "e-9800-text encore-text-body-small encore-internal-color-text-base c4hmXDjs2Dv8n3VCLz1g"; // Match existing style
-		enterKbd.dataset.encoreId = "text";
-		enterKbd.textContent = 'Enter';
+		// Try to clone an existing <kbd> to preserve its styling
+		const sampleKbd = sample.querySelector("kbd") || document.createElement("kbd");
 
-		// Add KBDs and text to the paragraph
-		queueHint.appendChild(ctrlKbd);
-		queueHint.appendChild(document.createTextNode(' ')); // Space between keys
-		queueHint.appendChild(enterKbd);
-		queueHint.appendChild(document.createTextNode(' Queue'));
+		const ctrlKbd = sampleKbd.cloneNode(false);
+		ctrlKbd.textContent = navigator.platform.toUpperCase().includes("MAC") ? "Cmd" : "Ctrl";
 
-		accessibilityBar.appendChild(queueHint);
+		const enterKbd = sampleKbd.cloneNode(false);
+		enterKbd.textContent = "Enter";
+
+		queueHint.append(ctrlKbd, enterKbd, document.createTextNode(" Queue"));
+
+		bar.appendChild(queueHint);
 	}
+
 
 	function removeQueueHint() {
 		const hint = document.getElementById(HINT_ID);

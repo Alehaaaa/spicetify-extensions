@@ -3,9 +3,10 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
-    "build": "spicetify-creator",
-    "build-local": "spicetify-creator --out=dist --minify",
-    "watch": "spicetify-creator --watch"
+    "build": "node scripts/generate-local-extensions.cjs && spicetify-creator",
+    "build-local": "node scripts/build-local-tags.cjs && node scripts/generate-local-extensions.cjs --enabled && spicetify-creator --out=dist --minify",
+    "dev": "node scripts/dev-watch.cjs",
+    "watch": "node scripts/dev-watch.cjs"
   },
   "license": "MIT",
   "devDependencies": {

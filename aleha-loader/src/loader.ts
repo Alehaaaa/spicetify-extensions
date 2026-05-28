@@ -1,21 +1,15 @@
-/*  Loader – dynamic extension manager for Spicetify
- *  © 2025  MIT-0.  NO WARRANTY.
- *
- *  Author:  github.com/Alehaaaa
- */
 /* eslint-disable no-eval */
 
 import { SettingsSection } from './customSettings/settingsSection';
 import type { ChangeEvent } from 'react';
+import localExtensions, { LOCAL_EXTENSION_MODE } from './localExtensions';
 
 interface ExtensionMeta {
   name: string;
-  raw: string;
+  raw?: string;
+  code?: string;
 }
 
-/* ──────────────────────────────
-   GitHub & Storage constants
-──────────────────────────────── */
 const GH_USER = 'Alehaaaa';
 const GH_REPO = 'spicetify-extensions';
 const GH_BRANCH = 'main';
@@ -27,86 +21,128 @@ const RAW_ROOT = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_B
 
 const STORE_KEY = 'LoaderStates';
 
-/* ──────────────────────────────
-   Main entry (exported so we can
-   call it from the real entry-point)
-──────────────────────────────── */
+function slug(name: string) {
+  return name.toLowerCase().replace(/\s+/g, '-');
+}
+
+function readSavedStates(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    console.warn('[Loader] ignored invalid saved extension states', e);
+    return {};
+  }
+}
+
+async function discoverRemoteExtensions(): Promise<ExtensionMeta[]> {
+  const response = await fetch(API_ROOT);
+
+  if (!response.ok) {
+    throw new Error(`GitHub API returned ${response.status}`);
+  }
+
+  const entries = await response.json();
+
+  if (!Array.isArray(entries)) {
+    throw new Error('GitHub API returned an unexpected payload');
+  }
+
+  return entries
+    .filter(f => f.type === 'file' && f.name.endsWith('.js'))
+    .map(f => ({
+      name: f.name.replace(/\.js$/, ''),
+      raw: `${RAW_ROOT}/${f.name}`,
+    }));
+}
+
+async function discoverExtensions(): Promise<ExtensionMeta[]> {
+  if (LOCAL_EXTENSION_MODE) {
+    return localExtensions;
+  }
+
+  return discoverRemoteExtensions();
+}
+
+async function getExtensionCode(ext: ExtensionMeta): Promise<string> {
+  if (ext.code !== undefined) {
+    return ext.code;
+  }
+
+  if (!ext.raw) {
+    throw new Error(`Extension ${ext.name} has no code source`);
+  }
+
+  const response = await fetch(ext.raw);
+
+  if (!response.ok) {
+    throw new Error(`Fetch returned ${response.status}`);
+  }
+
+  return response.text();
+}
+
 export default async function Loader(): Promise<void> {
-  /* 1️⃣  Wait for Spicetify helpers */
   while (!(window as any).Spicetify?.Platform?.History) {
     await new Promise(r => setTimeout(r, 300));
   }
 
-  function slug(name: string) {
-    return name.toLowerCase().replace(/\s+/g, '-');
+  const saved = readSavedStates();
+  let extensions: ExtensionMeta[] = [];
+
+  try {
+    extensions = await discoverExtensions();
+  } catch (e) {
+    console.error('[Loader] failed to discover extensions', e);
+    return;
   }
 
-  /* 2️⃣  Read persisted states */
-  const saved: Record<string, boolean> =
-    JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}');
+  console.log(
+    `[Loader] using ${LOCAL_EXTENSION_MODE ? 'local' : 'remote'} extension source (${extensions.length} extension(s))`,
+  );
 
-  /* 3️⃣  Discover *.js files in the repo */
-  const extensions: ExtensionMeta[] = await fetch(API_ROOT)
-    .then(r => r.json())
-    .then((arr: any[]) =>
-      arr
-        .filter(f => f.type === 'file' && f.name.endsWith('.js'))
-        .map(f => ({
-          name: f.name.replace(/\.js$/, ''),
-          raw: `${RAW_ROOT}/${f.name}`,
-        })),
-    );
-
-  /* 4️⃣  Build the Settings UI  */
   const section = new SettingsSection(`${GH_USER} Loader`, 'ale-loader-settings'); 
 
   extensions.forEach(ext => {
-    const id = slug(ext.name);            // ONE canonical key
+    const id = slug(ext.name);
 
     section.addToggle(
-      id,                                 // 1  id
-      ` • ${ext.name}`,                           // 2  label / description
-      saved[id] !== false,                // 3  defaultValue
-      undefined,                          // 4  legacy onChange
+      id,
+      ` - ${ext.name}`,
+      saved[id] !== false,
+      undefined,
       {
         onChange: (e: ChangeEvent<HTMLInputElement>) => {
-          saved[id] = e.currentTarget.checked;   // ✅ store by *id*
+          saved[id] = e.currentTarget.checked;
         },
       },
     );
   });
 
   section.addButton(
-    'save-and-reload',                    // id
-    'Persist changes and reload Spotify', // description
-    'Save & Reload',                      // button caption
+    'save-and-reload',
+    'Persist changes and reload Spotify',
+    'Save & Reload',
     () => {
       localStorage.setItem(STORE_KEY, JSON.stringify(saved));
-      window.location.reload();           // hard reload ⇒ fresh context
+      window.location.reload();
     },
   );
 
+  section.pushSettings();
 
-
-
-  section.pushSettings();      // <- make it appear in Settings
-
-  /* 5️⃣  Load only the toggled-on scripts */
   await Promise.all(
     extensions
-      .filter(ext => saved[slug(ext.name)] !== false)   // ✅ check by *id*
-      .map(ext =>
-        fetch(ext.raw)
-          .then(r => r.text())
-          .then(code => {
-            try {
-              new Function(code)();
-              console.log(`[Loader] loaded ${ext.name}`);
-            } catch (e) {
-              console.error(`[Loader] failed ${ext.name}`, e);
-            }
-          }),
-      ),
+      .filter(ext => saved[slug(ext.name)] !== false)
+      .map(async ext => {
+        try {
+          const code = await getExtensionCode(ext);
+          new Function(code)();
+          console.log(`[Loader] loaded ${ext.name}`);
+        } catch (e) {
+          console.error(`[Loader] failed ${ext.name}`, e);
+        }
+      }),
   );
 
 }

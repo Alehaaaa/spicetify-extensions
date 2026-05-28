@@ -1,56 +1,29 @@
 
 /*
- * Spicetify extension: Lyrics Reporter ✨ – OAuth Edition (postMessage fix)
- * ----------------------------------------------------------------------
- * Fixes the “Popup blocked” / token‑not‑captured issues by using the
- * recommended **postMessage** pattern instead of trying to read the popup’s
- * location (which is blocked by browser cross‑origin rules).
- *
- * How it works now
- * ---------------
- * 1. On first submit the extension opens the Discord OAuth URL in a popup.
- * 2. Your custom **redirect page** (set in REDIRECT_URI) must contain the
- *    one‑liner below. After Discord redirects there with `#access_token=…`,
- *    the page immediately posts the hash to the opener and closes itself:
- *
- *    ```html
- *    <!doctype html><script>window.opener.postMessage(location.hash,'*');window.close();</script>
- *    ```
- * 3. The extension listens for that `message` event, extracts the token,
- *    stores it in localStorage and resolves – no cross‑origin reads needed.
- *
- * IMPORTANT: replace the placeholder constants with real values:
- *    • DISCORD_CLIENT_ID  – your app’s Client ID (Developer Portal).
- *    • REDIRECT_URI       – URL of the page above, and added to your app.
- *    • DISCORD_CHANNEL_ID – numeric ID of the target text channel.
+ * Lyrics Reporter for Spicetify.
+ * Uses Discord OAuth through a popup and receives the access token with
+ * postMessage from the configured redirect page.
  */
 
 (function LyricsReporter() {
-    /* ---------------- Discord OAuth config -------- */
-    /* ---------------- Discord OAuth config -------- */
     const DISCORD_CLIENT_ID = "1370086618966265998";
-    // IMPORTANT: This MUST be the URL to your hosted HTML page (like display-token.html)
-    // that shows the token from the URL hash. And it must be whitelisted in Discord.
-    const REDIRECT_URI = "file:///C:/Users/alejandro/AppData/Roaming/spicetify/Extensions/display-token.html"; // <-- REPLACE THIS
+    const REDIRECT_URI = "file:///C:/Users/alejandro/AppData/Roaming/spicetify/Extensions/display-token.html";
     const DISCORD_CHANNEL_ID = "1370023661830148106";
 
-    /* ---------------- Tag definitions ------------- */
     const TAG_DATA = [
-        { name: "Missing Lyrics", icon: "📝" },
-        { name: "Incorrect Lyrics", icon: "❌" },
-        { name: "Incorrect Timing", icon: "⏱️" },
-        { name: "Improve Sync-Type", icon: "📈" },
-        { name: "Lyrics Provider", icon: "🏷️" },
-        { name: "Whole Album", icon: "💿" }
+        { name: "Missing Lyrics" },
+        { name: "Incorrect Lyrics" },
+        { name: "Incorrect Timing" },
+        { name: "Improve Sync-Type" },
+        { name: "Lyrics Provider" },
+        { name: "Whole Album" }
     ];
 
-    /* ----------- Wait for Spicetify -------------- */
     if (!(window.Spicetify && Spicetify.Player && Spicetify.Player.data)) {
         setTimeout(LyricsReporter, 500);
         return;
     }
 
-    /* ----------- Helper refs --------------------- */
     const TOKEN_KEY = "lyricsReporter.oauthToken";
     const EXP_KEY = "lyricsReporter.oauthExp";
 
@@ -110,7 +83,6 @@
         });
     }
 
-    /* ----------- UI injection -------------------- */
     function injectButton() {
         const ctrls = controlsContainer(); if (!ctrls) return;
         const has = ctrls.querySelector("#lyrics-report-btn");
@@ -124,7 +96,6 @@
         close ? ctrls.insertBefore(b, close) : ctrls.appendChild(b);
     }
 
-    /* ----------- Dialog -------------------------- */
     function openDialog() {
         if (document.querySelector("#lyrics-report-dialog")) return;
         const track = Spicetify.Player.data?.item;
@@ -140,7 +111,7 @@
 
         const tagBox = document.createElement("div"); Object.assign(tagBox.style, { display: "flex", flexWrap: "wrap", gap: "8px" }); modal.appendChild(tagBox);
         const sel = new Set();
-        TAG_DATA.forEach(({ name, icon }) => { const btn = document.createElement("button"); btn.innerHTML = `${icon} <span>${name}</span>`; Object.assign(btn.style, { padding: "6px 10px", border: "1px solid #666", borderRadius: "16px", background: "transparent", color: "#fff", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }); btn.onclick = () => { if (sel.has(name)) { sel.delete(name); btn.style.background = "transparent"; } else { sel.add(name); btn.style.background = "#1db954"; } check(); }; tagBox.appendChild(btn); });
+        TAG_DATA.forEach(({ name }) => { const btn = document.createElement("button"); btn.textContent = name; Object.assign(btn.style, { padding: "6px 10px", border: "1px solid #666", borderRadius: "16px", background: "transparent", color: "#fff", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }); btn.onclick = () => { if (sel.has(name)) { sel.delete(name); btn.style.background = "transparent"; } else { sel.add(name); btn.style.background = "#1db954"; } check(); }; tagBox.appendChild(btn); });
 
         const textarea = document.createElement("textarea"); textarea.rows = 3; textarea.placeholder = "Describe the issue (required)…"; Object.assign(textarea.style, { resize: "vertical", padding: "8px", borderRadius: "4px", border: "1px solid #666", background: "#121212", color: "#fff", fontSize: "13px" }); textarea.oninput = check; modal.appendChild(textarea);
 
@@ -159,7 +130,6 @@
         ov.appendChild(modal); document.body.appendChild(ov); ov.onclick = e => e.target === ov && ov.remove();
     }
 
-    /* ----------- Report build & send ------------- */
     const buildReport = ({ track, trackUri, tags, description }) => {
         const trackUrl = trackUri.startsWith("spotify:track:") ? `https://open.spotify.com/track/${trackUri.split(":").pop()}` : trackUri;
         const r = { title: `${track?.name || "Unknown title"} by ${track?.artists?.[0]?.name || "Unknown artist"}`, track: trackUrl, tags, description };
@@ -175,7 +145,6 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }
 
-    /* ----------- Observe ------------------------- */
     new MutationObserver(injectButton).observe(document.body, { childList: true, subtree: true });
     injectButton();
 })();

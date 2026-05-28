@@ -11,9 +11,7 @@
         if (homeButton && historyButtons && marketplaceButton) {
             observer.disconnect();
             const marketplaceButtonParent = marketplaceButton.parentElement;
-            // Move Home button to the beginning of customIcons.
             marketplaceButtonParent.insertBefore(homeButton, marketplaceButtonParent.firstChild);
-            // Move History buttons to the beginning of customIcons (after Home).
             marketplaceButtonParent.insertBefore(historyButtons, marketplaceButtonParent.firstChild);
 
             console.log("[HomeWhereYouBelong] Moved Home to where it belongs");

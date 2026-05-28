@@ -1,83 +1,111 @@
-/**
- * @fileoverview Spicetify “Track Tags” extension
- * @author Alehaaaa
- */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 
 import React from 'react';
+
 const { createRoot } = Spicetify.ReactDOM;
 
 declare global {
-    interface Window { operatingSystem: string | null }
+    interface Window {
+        operatingSystem: string | null;
+        playingTagsAttachSelector?: string;
+        playingTagsCleanup?: () => void;
+    }
 }
+
+// ── Constants ──────────────────────────────────────────────────────────
 
 const LOG_PREFIX = '[Track Tags]';
+const DEFAULT_ATTACH_SELECTOR = '.main-nowPlayingWidget-nowPlaying .main-trackInfo-xsmallBadges';
+const DJ_COVER_ART_URL = 'https://lexicon-assets.spotifycdn.com/Your-DJ-Cover-Art-300.png';
+const LIKED_ART_URL = 'https://misc.scdn.co/liked-songs/liked-songs-300.png';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// ── Early cleanup & logging ────────────────────────────────────────────
+
 console.log(LOG_PREFIX, 'extension loaded');
+document.querySelectorAll('#playing-tags').forEach((el) => el.remove());
 
-// ──────────────────────────────────────────────────────────────────────────
-// Generic async helpers
-// ──────────────────────────────────────────────────────────────────────────
-async function waitForSpicetify(): Promise<void> {
-    while (!window.Spicetify || !Spicetify.showNotification) {
-        await new Promise((r) => setTimeout(r, 100));
-    }
+// ── Types ──────────────────────────────────────────────────────────────
+
+interface TagElements {
+    wrapper: HTMLDivElement;
+    explicit: HTMLSpanElement;
+    playlist: HTMLSpanElement;
+    heart: HTMLSpanElement;
+    downloaded: HTMLSpanElement;
+    separator: HTMLSpanElement;
 }
 
-async function waitForTrackData(): Promise<void> {
-    while (!Spicetify.Player?.data?.item) {
-        await new Promise((r) => setTimeout(r, 100));
-    }
+interface StateKey {
+    itemUri?: string;
+    contextUri?: string;
 }
 
-/**
- * Waits for a specific DOM element to be available before proceeding.
- * This function is crucial for Spicetify modifications as elements might not be
- * immediately present when the script runs.
- *
- * @param {string} selector
- * @returns {Promise<HTMLElementTagNameMap[K]>}
- */
-async function waitForElement<K extends keyof HTMLElementTagNameMap>(
-    selector: string
-): Promise<HTMLElementTagNameMap[K]> {
-    let el = document.querySelector<HTMLElementTagNameMap[K]>(selector);
+// ── Helpers ────────────────────────────────────────────────────────────
+
+async function waitFor<T>(predicate: () => T | null | undefined | false, ms = 100): Promise<NonNullable<T>> {
+    let result = predicate();
+    while (!result) {
+        await new Promise((r) => setTimeout(r, ms));
+        result = predicate();
+    }
+    return result as NonNullable<T>;
+}
+
+async function waitForElement(selector: string, warnMsg?: string): Promise<HTMLElement> {
+    let el = document.querySelector<HTMLElement>(selector);
+    let warned = false;
     while (!el) {
+        if (warnMsg && !warned) {
+            console.warn(LOG_PREFIX, warnMsg, selector);
+            warned = true;
+        }
         await new Promise((r) => setTimeout(r, 100));
-        el = document.querySelector(selector) as HTMLElementTagNameMap[K] | null;
+        el = document.querySelector<HTMLElement>(selector);
     }
     return el;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Global OS cache
-// ──────────────────────────────────────────────────────────────────────────
-window.operatingSystem = window.operatingSystem ?? null;
-(async () => {
-    await waitForTrackData();
-    if (window.operatingSystem == null) {
-        window.operatingSystem = await Spicetify.Platform.operatingSystem;
-    }
-})();
+function confirmDialog(
+    props: React.ComponentProps<typeof Spicetify.ReactComponent.ConfirmDialog>
+): Promise<boolean> {
+    return new Promise((resolve) => {
+        const portal = document.createElement('div');
+        portal.className = 'ReactModalPortal';
+        document.body.appendChild(portal);
 
-// ──────────────────────────────────────────────────────────────────────────
-// Styles
-// ──────────────────────────────────────────────────────────────────────────
-async function tagCSS(): Promise<HTMLStyleElement> {
+        const root = createRoot(portal);
+        const destroy = () => { root.unmount(); portal.remove(); };
+
+        root.render(
+            React.createElement(Spicetify.ReactComponent.ConfirmDialog, {
+                ...props,
+                isOpen: true,
+                onConfirm: (e: any) => { props.onConfirm?.(e); destroy(); resolve(true); },
+                onClose:   (e: any) => { props.onClose?.(e);   destroy(); resolve(false); },
+                onOutside: (e: any) => { props.onOutside?.(e); destroy(); resolve(false); },
+            })
+        );
+    });
+}
+
+function stateKeysEqual(a: StateKey, b: StateKey): boolean {
+    return a.itemUri === b.itemUri && a.contextUri === b.contextUri;
+}
+
+// ── CSS ────────────────────────────────────────────────────────────────
+
+function createStyleSheet(attachSelector: string): HTMLStyleElement {
     const style = document.createElement('style');
-    style.innerHTML = `
-        .main-nowPlayingWidget-nowPlaying:not(#upcomingSongDiv) .main-trackInfo-enhanced {
-            align-items: center;
-        }
+    style.textContent = `
+        ${attachSelector} { align-items: center; }
         #playing-tags {
             display: flex;
-            gap: 3px;
+            gap: 4px;
             min-width: 0;
             align-items: center;
         }
-        #playing-tags span {
-            display: flex;
-            align-items: center;
-        }
+        #playing-tags span { display: flex; align-items: center; }
         .playing-heart-tag { cursor: pointer; }
         .playing-explicit-tag {
             display: inline-flex;
@@ -97,125 +125,41 @@ async function tagCSS(): Promise<HTMLStyleElement> {
     return style;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// UI helpers
-// ──────────────────────────────────────────────────────────────────────────
-function confirmDialog(
-    props: React.ComponentProps<typeof Spicetify.ReactComponent.ConfirmDialog>
-): Promise<boolean> {
-    return new Promise((resolve) => {
-        const portal = document.createElement('div');
-        portal.className = 'ReactModalPortal';
-        document.body.appendChild(portal);
+// ── DOM Construction ───────────────────────────────────────────────────
 
-        const root = createRoot(portal);
-
-        const destroy = () => {
-            root.unmount();
-            portal.remove();
-        };
-
-        const allProps = {
-            ...props,
-            isOpen: true,
-            onConfirm: (e: any) => {
-                props.onConfirm?.(e);
-                destroy();
-                resolve(true);
-            },
-            onClose: (e: any) => {
-                props.onClose?.(e);
-                destroy();
-                resolve(false);
-            },
-            onOutside: (e: any) => {
-                props.onOutside?.(e);
-                destroy();
-                resolve(false);
-            },
-        };
-
-        root.render(React.createElement(Spicetify.ReactComponent.ConfirmDialog, allProps));
-    });
-}
-
-function toggleSeparator(show: boolean, el: HTMLElement): void {
-    el.style.display = show ? 'inherit' : 'none';
-}
-
-function handleImgClick(
-    playlistSpan: HTMLSpanElement,
-    pathname: string | undefined,
-    trackDetails: any
-): void {
-    if (pathname) {
-        playlistSpan.onclick = () =>
-            Spicetify.Platform.History.push({
-                pathname,
-                search: `?uid=${trackDetails.uid}&uri=${trackDetails.uri}`,
-            });
-        playlistSpan.style.cursor = 'pointer';
-    } else {
-        playlistSpan.style.cursor = 'default';
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Tag creation and management
-// ──────────────────────────────────────────────────────────────────────────
-
-/**
- * Creates the initial DOM structure for the playing tags and stores references
- * to its child elements in global variables. This function is called only once
- * during initialization.
- * @returns {HTMLDivElement}
- */
-async function createTagsStructure(): Promise<HTMLDivElement> {
-    const target = await waitForElement<'div'>('.main-nowPlayingWidget-nowPlaying .main-trackInfo-enhanced');
-
+function createTagElements(): TagElements {
     const wrapper = document.createElement('div');
     wrapper.id = 'playing-tags';
 
-    // Explicit tag creation
-    const explicitContainer = document.createElement('span');
-    explicitContainer.dataset.encoreId = 'text';
-    explicitContainer.className =
-        'e-9640-text encore-text-body-medium encore-internal-color-text-subdued main-trackList-rowBadges';
+    // Explicit badge
     const explicit = document.createElement('span');
-    explicit.className = 'playing-explicit-tag';
-    explicit.title = explicit.ariaLabel = 'Explicit';
-    explicit.textContent = 'E';
-    explicitContainer.appendChild(explicit);
-    explicitContainerSpan = explicitContainer;
+    explicit.dataset.encoreId = 'text';
+    explicit.className = 'e-9640-text encore-text-body-medium encore-internal-color-text-subdued main-trackList-rowBadges';
+    const eBadge = document.createElement('span');
+    eBadge.className = 'playing-explicit-tag';
+    eBadge.title = eBadge.ariaLabel = 'Explicit';
+    eBadge.textContent = 'E';
+    explicit.appendChild(eBadge);
 
-    // Playlist tag creation
+    // Playlist / context image
     const playlist = document.createElement('span');
     playlist.className = 'Wrapper-sm-only Wrapper-small-only';
     const playlistImg = document.createElement('img');
-    playlistImg.setAttribute('width', '14');
-    playlistImg.setAttribute('height', '14');
-    playlistImg.classList.add(
-        'Svg-img-icon-small-textBrightAccent',
-        'playing-playlist-tag'
-    );
+    playlistImg.width = 14;
+    playlistImg.height = 14;
+    playlistImg.classList.add('Svg-img-icon-small-textBrightAccent', 'playing-playlist-tag');
     playlist.appendChild(playlistImg);
-    playlistSpan = playlist;
 
-    // Heart tag creation
+    // Heart (liked) icon
     const heart = document.createElement('span');
     heart.className = 'Wrapper-sm-only Wrapper-small-only';
     heart.title = 'Liked song';
-    const heartSvgNS = 'http://www.w3.org/2000/svg';
-    const heartSvg = document.createElementNS(heartSvgNS, 'svg');
+    const heartSvg = document.createElementNS(SVG_NS, 'svg');
     heartSvg.setAttribute('viewBox', '0 0 24 24');
     heartSvg.setAttribute('width', '14');
     heartSvg.setAttribute('height', '14');
-    heartSvg.classList.add(
-        'Svg-img-icon-small-textBrightAccent',
-        'playing-playlist-tag',
-        'playing-heart-tag'
-    );
-    const heartPath = document.createElementNS(heartSvgNS, 'path');
+    heartSvg.classList.add('Svg-img-icon-small-textBrightAccent', 'playing-playlist-tag', 'playing-heart-tag');
+    const heartPath = document.createElementNS(SVG_NS, 'path');
     heartPath.setAttribute(
         'd',
         'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
@@ -223,230 +167,231 @@ async function createTagsStructure(): Promise<HTMLDivElement> {
     heartPath.setAttribute('fill', 'currentColor');
     heartSvg.appendChild(heartPath);
     heart.appendChild(heartSvg);
-    savedTrackSpan = heart;
 
-    // Download tag creation
+    // Downloaded icon
     const downloaded = document.createElement('span');
     downloaded.dataset.encoreId = 'text';
-    downloaded.className =
-        'encore-text encore-text-body-medium encore-internal-color-text-subdued main-trackList-rowBadges';
+    downloaded.className = 'encore-text encore-text-body-medium encore-internal-color-text-subdued main-trackList-rowBadges';
     downloaded.title = 'Available offline';
-    const dlSvg = document.createElementNS(heartSvgNS, 'svg');
+    const dlSvg = document.createElementNS(SVG_NS, 'svg');
     dlSvg.setAttribute('viewBox', '0 0 16 16');
     dlSvg.setAttribute('height', '12');
     dlSvg.dataset.encoreId = 'icon';
     dlSvg.setAttribute('role', 'img');
     dlSvg.setAttribute('aria-hidden', 'false');
-    dlSvg.classList.add(
-        'Svg-img-icon-small-textBrightAccent',
-        'playing-playlist-tag',
-        'playing-downloaded-tag'
-    );
-    const dlPath = document.createElementNS(heartSvgNS, 'path');
+    dlSvg.classList.add('Svg-img-icon-small-textBrightAccent', 'playing-playlist-tag', 'playing-downloaded-tag');
+    const dlPath = document.createElementNS(SVG_NS, 'path');
     dlPath.setAttribute(
         'd',
         'M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-4.75a.75.75 0 0 0-.75.75v5.94L6.055 8.744a.75.75 0 1 0-1.06 1.06L8 12.811l3.005-3.006a.75.75 0 1 0-1.06-1.06L8.75 9.939V4A.75.75 0 0 0 8 3.25z'
     );
     dlSvg.appendChild(dlPath);
     downloaded.appendChild(dlSvg);
-    downloadedSpan = downloaded;
 
-    // Separator creation
-    const sep = document.createElement('span');
-    sep.className = 'e-9640-text encore-text-marginal';
-    sep.dataset.encoreId = 'text';
-    sep.style.paddingLeft = '2px';
-    sep.style.paddingRight = '1px';
-    sep.textContent = '•';
-    separator = sep;
+    // Separator dot
+    const separator = document.createElement('span');
+    separator.className = 'e-9640-text encore-text-marginal';
+    separator.dataset.encoreId = 'text';
+    separator.style.paddingLeft = '2px';
+    separator.style.paddingRight = '1px';
+    separator.textContent = '•';
 
-    // Initial visibility (all hidden)
-    [explicitContainer, playlist, heart, downloaded, sep].forEach(
-        (el) => (el.style.display = 'none')
-    );
+    // Start hidden
+    [explicit, playlist, heart, downloaded, separator].forEach((el) => (el.style.display = 'none'));
+    wrapper.append(explicit, playlist, heart, downloaded, separator);
 
-    wrapper.append(explicitContainer, playlist, heart, downloaded, sep);
-
-    return wrapper;
+    return { wrapper, explicit, playlist, heart, downloaded, separator };
 }
 
+// ── Context Image Logic ────────────────────────────────────────────────
 
-/**
- * Updates the visibility and content of the existing tag elements based on the
- * current player state. This function does not create or remove elements,
- * but rather modifies their display properties and event listeners.
- *
- * @param {any} state Spicetify.Platform.PlayerAPI.getState()
- * @param {HTMLSpanElement} explicitContainerSpan
- * @param {HTMLSpanElement} playlistSpan
- * @param {HTMLSpanElement} savedTrackSpan
- * @param {HTMLSpanElement} downloadedSpan
- * @param {HTMLSpanElement} separator
- * @returns {boolean}
- */
-async function updateTags(
-    state: any,
-    explicitContainerSpan: HTMLSpanElement,
-    playlistSpan: HTMLSpanElement,
-    savedTrackSpan: HTMLSpanElement,
-    downloadedSpan: HTMLSpanElement,
-    separator: HTMLSpanElement
-): Promise<boolean> {
-    let separatorNeeded = false;
+async function updateContextImage(state: any, track: any, playlistSpan: HTMLSpanElement): Promise<boolean> {
+    const ctx = state.context;
+    if (!ctx) {
+        playlistSpan.style.display = 'none';
+        return false;
+    }
+
+    const uriParts = ctx.uri.split(':');
+    const contextType = uriParts[1];
+    const isDjContext = ctx.metadata?.agentic_product_type === 'dj';
+    const isDjItem = track.metadata?.is_narration === 'true';
+    const img = playlistSpan.querySelector('img')!;
+    let pathname: string | undefined;
+
+    if (isDjItem) {
+        playlistSpan.style.display = 'none';
+        return false;
+    }
+
+    if (isDjContext) {
+        img.src = DJ_COVER_ART_URL;
+        playlistSpan.title = 'Playing from DJ';
+        playlistSpan.style.display = 'inherit';
+        playlistSpan.onclick = null;
+        playlistSpan.style.cursor = 'default';
+        return true;
+    }
+
+    if (contextType === 'user' && uriParts[3] === 'collection') {
+        pathname = '/collection/tracks';
+        img.src = LIKED_ART_URL;
+        playlistSpan.title = 'Playing from Liked Songs';
+    } else if (contextType === 'playlist' || contextType === 'album') {
+        try {
+            const meta = await Spicetify.Platform.PlaylistAPI.getMetadata(ctx.uri);
+            if (meta?.images?.[0]?.url && !(meta.canPlay === false && meta.isSaved && meta.name === 'DJ')) {
+                pathname = `/${uriParts[1]}/${uriParts[2]}`;
+                img.src = meta.images[0].url;
+                playlistSpan.title = `Playing from ${meta.name}`;
+            } else {
+                playlistSpan.style.display = 'none';
+                return false;
+            }
+        } catch (err) {
+            console.warn(LOG_PREFIX, `Failed to get context metadata: ${ctx.uri}`, err);
+            playlistSpan.style.display = 'none';
+            return false;
+        }
+    } else {
+        playlistSpan.style.display = 'none';
+        return false;
+    }
+
+    playlistSpan.style.display = 'inherit';
+    if (pathname) {
+        playlistSpan.onclick = () =>
+            Spicetify.Platform.History.push({
+                pathname,
+                search: `?uid=${track.uid}&uri=${track.uri}`,
+            });
+        playlistSpan.style.cursor = 'pointer';
+    } else {
+        playlistSpan.onclick = null;
+        playlistSpan.style.cursor = 'default';
+    }
+    return true;
+}
+
+// ── Tag Update Logic ───────────────────────────────────────────────────
+
+async function updateTags(state: any, els: TagElements, requestUpdate: () => void): Promise<boolean> {
     const track = state.item;
     if (!track) return false;
 
-    // Explicit Tag
-    if (track.isExplicit) {
-        explicitContainerSpan.style.display = 'inherit';
-        separatorNeeded = true;
-    } else {
-        explicitContainerSpan.style.display = 'none';
-    }
+    let visible = false;
 
-    // Liked Song Tag
-    if (track.metadata?.['collection.in_collection'] === 'true') {
-        savedTrackSpan.style.display = 'inherit';
-        separatorNeeded = true;
-        savedTrackSpan.onclick = async () => {
-            if (
-                await confirmDialog({
-                    titleText: 'Remove from Liked Songs?',
-                    descriptionText: 'You will not see this song in your Liked Songs.',
-                    confirmText: 'Delete',
-                    cancelText: 'Keep',
-                })
-            ) {
+    // Explicit
+    const isExplicit = !!track.isExplicit;
+    els.explicit.style.display = isExplicit ? 'inherit' : 'none';
+    visible ||= isExplicit;
+
+    // Liked
+    const isLiked = track.metadata?.['collection.in_collection'] === 'true';
+    els.heart.style.display = isLiked ? 'inherit' : 'none';
+    visible ||= isLiked;
+    if (isLiked) {
+        els.heart.onclick = async () => {
+            const confirmed = await confirmDialog({
+                titleText: 'Remove from Liked Songs?',
+                descriptionText: 'You will not see this song in your Liked Songs.',
+                confirmText: 'Delete',
+                cancelText: 'Keep',
+            });
+            if (confirmed) {
                 (Spicetify.Player as any).setHeart(false);
-                setTimeout(() => {
-                    update();
-                }, 200);
+                setTimeout(requestUpdate, 200);
             }
         };
     } else {
-        savedTrackSpan.style.display = 'none';
+        els.heart.onclick = null;
     }
 
-    // Downloaded Tag
-    if (track.metadata?.marked_for_download === 'true') {
-        downloadedSpan.style.display = 'inherit';
-        separatorNeeded = true;
-    } else {
-        downloadedSpan.style.display = 'none';
-    }
+    // Downloaded
+    const isDownloaded = track.metadata?.marked_for_download === 'true';
+    els.downloaded.style.display = isDownloaded ? 'inherit' : 'none';
+    visible ||= isDownloaded;
 
-    // Playlist / Context Tag
-    const ctx = state.context;
-    if (ctx) {
-        const uriParts = ctx.uri.split(':');
-        const contextType = uriParts[1];
+    // Context image
+    visible ||= await updateContextImage(state, track, els.playlist);
 
-        let pathname: string | undefined;
-        const img = playlistSpan.querySelector('img')!;
-
-        // Handle Liked Songs special case
-        if (contextType === 'user' && uriParts[3] === 'collection') {
-            pathname = '/collection/tracks';
-            img.src = 'https://misc.scdn.co/liked-songs/liked-songs-300.png';
-            playlistSpan.title = 'Playing from Liked Songs';
-            playlistSpan.style.display = 'inherit';
-            separatorNeeded = true;
-        }
-        // Handle actual playlist or album contexts
-        else if (contextType === 'playlist' || contextType === 'album') {
-            try {
-                const meta = await Spicetify.Platform.PlaylistAPI.getMetadata(ctx.uri);
-                if (meta?.images?.[0]?.url && !(meta.canPlay === false && meta.isSaved && meta.name === 'DJ')) {
-                    pathname = `/${uriParts[1]}/${uriParts[2]}`;
-                    img.src = meta.images[0].url;
-                    playlistSpan.title = `Playing from ${meta.name}`;
-                    playlistSpan.style.display = 'inherit';
-                    separatorNeeded = true;
-                } else {
-                    playlistSpan.style.display = 'none';
-                }
-            } catch (error) {
-                console.warn(LOG_PREFIX, `Failed to get metadata for ${contextType} context: ${ctx.uri}`, error);
-                playlistSpan.style.display = 'none';
-            }
-        }
-        else {
-            playlistSpan.style.display = 'none';
-        }
-        handleImgClick(playlistSpan, pathname, track);
-
-    } else {
-        // If no context, hide playlist tag
-        playlistSpan.style.display = 'none';
-    }
-
-    toggleSeparator(separatorNeeded, separator);
-    return separatorNeeded;
+    els.separator.style.display = visible ? 'inherit' : 'none';
+    return visible;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Global state and main update loop
-// ──────────────────────────────────────────────────────────────────────────
-let playingTagsWrapper: HTMLDivElement | undefined;
-let explicitContainerSpan: HTMLSpanElement | undefined;
-let playlistSpan: HTMLSpanElement | undefined;
-let savedTrackSpan: HTMLSpanElement | undefined;
-let downloadedSpan: HTMLSpanElement | undefined;
-let separator: HTMLSpanElement | undefined;
-let lastPlayerState: { item?: string; context?: string } = {};
+// ── Antigravity Button Reposition ──────────────────────────────────────
 
-/**
- * The main update function for the track tags. It detaches the tags element,
- * updates its content, and then re-attaches it if any tags are valid.
- */
-const update = async () => {
-    if (!playingTagsWrapper) {
-        return;
-    }
-    const targetParent = playingTagsWrapper.parentElement || await waitForElement<'div'>('.main-nowPlayingWidget-nowPlaying .main-trackInfo-enhanced');
+function repositionAntigravityButton(): void {
+    const bar = document.querySelector('.main-nowPlayingBar-extraControls');
+    if (!bar) return;
 
-    const state = await Spicetify.Platform.PlayerAPI.getState();
-    const current = { item: state.item?.uri, context: state.context?.uri };
+    const btn = Array.from(bar.querySelectorAll('span[role="presentation"]')).find((el) => {
+        const d = el.querySelector('svg path')?.getAttribute('d');
+        return d?.startsWith('M7.813 14.497') ?? false;
+    }) as HTMLElement | undefined;
 
-    let tagsAreVisible = false;
-    if (JSON.stringify(current) !== JSON.stringify(lastPlayerState) || !playingTagsWrapper.isConnected) {
-        lastPlayerState = current; // Update last state
+    if (!btn) return;
+    if (btn.style.order !== '-1') btn.style.order = '-1';
+    if (bar.firstElementChild !== btn) bar.prepend(btn);
+}
 
-        tagsAreVisible = await updateTags(
-            state,
-            explicitContainerSpan!,
-            playlistSpan!,
-            savedTrackSpan!,
-            downloadedSpan!,
-            separator!
-        );
-    } else {
-        tagsAreVisible = explicitContainerSpan?.style.display !== 'none' ||
-                         playlistSpan?.style.display !== 'none' ||
-                         savedTrackSpan?.style.display !== 'none' ||
-                         downloadedSpan?.style.display !== 'none';
+// ── Main ───────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+    await waitFor(() => window.Spicetify && Spicetify.showNotification);
+
+    // Clean up any previous instance
+    window.playingTagsCleanup?.();
+    document.querySelectorAll('#playing-tags').forEach((el) => el.remove());
+
+    // Detect OS (needed for Windows songchange workaround)
+    window.operatingSystem ??= null;
+    window.playingTagsAttachSelector ??= DEFAULT_ATTACH_SELECTOR;
+    await waitFor(() => Spicetify.Player?.data?.item);
+    if (window.operatingSystem == null) {
+        window.operatingSystem = await Spicetify.Platform.operatingSystem;
     }
 
+    // Build DOM
+    const attachSelector = window.playingTagsAttachSelector!;
+    await waitForElement(attachSelector, 'Attach selector not found:');
+    const els = createTagElements();
 
-    if (tagsAreVisible && targetParent && !playingTagsWrapper.isConnected) {
-        targetParent.prepend(playingTagsWrapper);
-    } else if (!tagsAreVisible && playingTagsWrapper.isConnected) {
-         playingTagsWrapper.remove();
-    }
-};
+    // State tracking
+    let lastState: StateKey = {};
 
-// ──────────────────────────────────────────────────────────────────────────
-// Initialisation
-// ──────────────────────────────────────────────────────────────────────────
-async function initializeTags(): Promise<void> {
-    await waitForSpicetify();
+    const update = async () => {
+        const parent = els.wrapper.parentElement
+            || await waitForElement(attachSelector, 'Attach selector not found:');
 
-    playingTagsWrapper = await createTagsStructure();
-    if (!playingTagsWrapper) {
-        console.error(LOG_PREFIX, "Failed to create initial tags structure. Aborting initialization.");
-        return;
-    }
-    Spicetify.Player.addEventListener('songchange', () => setTimeout(update, 1));
+        const state = await Spicetify.Platform.PlayerAPI.getState();
+        const current: StateKey = { itemUri: state.item?.uri, contextUri: state.context?.uri };
+
+        let tagsVisible: boolean;
+        if (!stateKeysEqual(current, lastState) || !els.wrapper.isConnected) {
+            lastState = current;
+            tagsVisible = await updateTags(state, els, update);
+        } else {
+            tagsVisible =
+                els.explicit.style.display !== 'none' ||
+                els.playlist.style.display !== 'none' ||
+                els.heart.style.display !== 'none' ||
+                els.downloaded.style.display !== 'none';
+        }
+
+        if (tagsVisible && parent && !els.wrapper.isConnected) {
+            parent.querySelectorAll('#playing-tags').forEach((el) => {
+                if (el !== els.wrapper) el.remove();
+            });
+            parent.prepend(els.wrapper);
+        } else if (!tagsVisible && els.wrapper.isConnected) {
+            els.wrapper.remove();
+        }
+    };
+
+    // Listen for song changes
+    const onSongChange = () => setTimeout(update, 1);
+    Spicetify.Player.addEventListener('songchange', onSongChange);
 
     if (window.operatingSystem === 'Windows') {
         Spicetify.Player.dispatchEvent(new Event('songchange'));
@@ -454,14 +399,27 @@ async function initializeTags(): Promise<void> {
         update();
     }
 
-    document.head.appendChild(await tagCSS());
-}
+    // Inject styles
+    document.head.appendChild(createStyleSheet(attachSelector));
 
-// ──────────────────────────────────────────────────────────────────────────
-// Entry point
-// ──────────────────────────────────────────────────────────────────────────
-async function main(): Promise<void> {
-    await initializeTags();
+    // Observe DOM for antigravity button repositioning
+    const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            if (m.addedNodes.length > 0) {
+                repositionAntigravityButton();
+                return;
+            }
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    repositionAntigravityButton();
+
+    // Register cleanup for hot-reload
+    window.playingTagsCleanup = () => {
+        Spicetify.Player.removeEventListener('songchange', onSongChange);
+        els.wrapper.remove();
+        observer.disconnect();
+    };
 }
 
 main().catch((e) => console.error(LOG_PREFIX, 'fatal error', e));

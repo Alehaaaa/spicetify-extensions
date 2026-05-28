@@ -4,20 +4,15 @@
 // DESCRIPTION: Adds Ctrl+Enter to add selected items from the search modal to the queue.
 // VERSION: 1.0.1
 
-// --- JSDoc Type Definitions for Spicetify ---
-
 /**
- * Interface for the Spicetify Player API.
  * @typedef {object} SpicetifyPlayerAPI
  */
 
 /**
- * Interface for the Spicetify Cosmos Async API.
  * @typedef {object} SpicetifyCosmosAsyncAPI
  */
 
 /**
- * Interface for the Spicetify Cosmos Async API.
  * @typedef {object} SpicetifyPlatform
  */
 
@@ -27,13 +22,11 @@
  */
 
 /**
- * Interface for the Spicetify GraphQL API.
  * @typedef {object} SpicetifyGraphQLAPI
  * @property {function(object): Promise<object>} Request - Sends a GraphQL request.
  */
 
 /**
- * The main Spicetify API object available in extensions.
  * @typedef {object} SpicetifyAPI
  * @property {function(string, boolean=, number=): void} showNotification - Displays a notification message to the user.
  * @property {SpicetifyPlayerAPI} Player - The Spicetify Player API.
@@ -43,11 +36,7 @@
  * @property {addToQueue} addToQueue - Function to add tracks to the queue.
  * @property {object} URI - Object containing URI utility functions. */
 
-
-
-// --- Tell TypeScript Spicetify exists on window ---
 /** @type {Window & typeof globalThis & { Spicetify: SpicetifyAPI }} */
-
 const typedWindow = /** @type {any} */ (window);
 const LOG_PREFIX = '[SearchModalQueue]';
 
@@ -56,42 +45,30 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 
 
 (function searchModalQueue() {
-	const { Spicetify } = typedWindow; // Use the typed window
+	const { Spicetify } = typedWindow;
 	if (!Spicetify || !Spicetify.Player || !SpicetifyAny.CosmosAsync) {
-		// console.warn(LOG_PREFIX, "Spicetify not ready, trying again in 500ms.");
 		setTimeout(searchModalQueue, 500);
 		return;
 	}
 
-	// console.log(LOG_PREFIX, "Extension loaded.");
 	const SNACKBAR_CONTAINER_ID = 'custom-snackbar-container';
 
-	// --- Custom Snackbar Implementation ---
-
-	/**
-	 * Creates and manages the snackbar container element.
-	 * Appends it to document.body to ensure high visibility.
-	 * @returns {HTMLElement} The snackbar container element.
-	 */
 	function getOrCreateSnackbarContainer() {
 		let container = document.getElementById(SNACKBAR_CONTAINER_ID);
 		if (!container) {
 			container = document.createElement('div');
 			container.id = SNACKBAR_CONTAINER_ID;
-			// --- Basic Styling (add more CSS rules below) ---
 			container.style.position = 'fixed';
-			container.style.bottom = '30px'; // Position from bottom
-			container.style.zIndex = '10000'; // High z-index to appear above most elements
+			container.style.bottom = '30px';
+			container.style.zIndex = '10000';
 			container.style.display = 'flex';
-			container.style.flexDirection = 'column-reverse'; // Newest snackbar appears at the bottom
-			container.style.alignItems = 'center'; // Center snackbars within the container
-			container.style.gap = '10px'; // Space between snackbars
-			// Ensure it doesn't block interaction if it somehow grows too wide
+			container.style.flexDirection = 'column-reverse';
+			container.style.alignItems = 'center';
+			container.style.gap = '10px';
 			container.style.width = '100%';
 
 			document.body.appendChild(container);
 
-			// --- Inject CSS for Snackbar Styling ---
 			const style = document.createElement('style');
 			style.textContent = `
                 #${SNACKBAR_CONTAINER_ID} .custom-snackbar {
@@ -103,18 +80,18 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
                     font-family: SpotifyMixUI, CircularSp-Arab, CircularSp-Hebr, CircularSp-Cyrl, CircularSp-Grek, CircularSp-Deva, var(--fallback-fonts, sans-serif);
                     font-size: 1rem;
 					font-weight: 400;
-                    opacity: 0; /* Start hidden for animation */
-                    transform: translateY(20px); /* Start slightly lower for animation */
+                    opacity: 0;
+                    transform: translateY(20px);
                     animation: snackbar-fade-in 0.3s ease-out forwards;
-                    max-width: 500px; /* Prevent overly wide snackbars */
-                    word-wrap: break-word; /* Ensure long text wraps */
+                    max-width: 500px;
+                    word-wrap: break-word;
 
-					text-align: center; /* Center text inside snackbar */
-					margin-inline: auto; /* Center the snackbar horizontally */
+					text-align: center;
+					margin-inline: auto;
                 }
 
                 #${SNACKBAR_CONTAINER_ID} .custom-snackbar.error {
-                    background-color: #d32f2f; /* Red for errors */
+                    background-color: #d32f2f;
                 }
 
                 #${SNACKBAR_CONTAINER_ID} .custom-snackbar.exit {
@@ -136,7 +113,7 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
                     }
                     to {
                         opacity: 0;
-                        transform: translateY(20px); /* Move down slightly on exit */
+                        transform: translateY(20px);
                     }
                 }
             `;
@@ -160,33 +137,24 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 			snackbar.classList.add('error');
 		}
 		snackbar.textContent = message;
-		// Add ARIA roles for accessibility
 		snackbar.setAttribute('role', 'alert');
 		snackbar.setAttribute('aria-live', 'assertive');
 
-
-		// Prepend to have the newest at the bottom visually due to flex-direction: column-reverse
 		container.prepend(snackbar);
 
-		// Automatically remove the snackbar after the duration
 		setTimeout(() => {
-			snackbar.classList.add('exit'); // Add exit animation class
-			// Remove the element after the animation completes
+			snackbar.classList.add('exit');
 			snackbar.addEventListener('animationend', () => {
-				if (snackbar.parentNode === container) { // Check if it hasn't been removed already
+				if (snackbar.parentNode === container) {
 					container.removeChild(snackbar);
 				}
-				// Optional: Remove container if empty? Decide based on preference.
-				// if (container.children.length === 0) {
-				//    container.remove();
-				// }
-			}, { once: true }); // Ensure the listener runs only once
+			}, { once: true });
 
 		}, duration);
 	}
 
-	const SEARCH_MODAL_SELECTOR = 'div[role="dialog"][aria-label="Search"] #search-modal-listbox';
-	const ACCESSIBILITY_BAR_SELECTOR = 'div[role="dialog"][aria-label="Search"] .iIaWJ3qSDLsKHwNCvv_g'; // new hint bar
+	const SEARCH_MODAL_DIALOG_SELECTOR = 'div[role="dialog"][aria-label="Search"][aria-modal="true"]';
+	const SEARCH_MODAL_LISTBOX_SELECTOR = `${SEARCH_MODAL_DIALOG_SELECTOR} #search-modal-listbox`;
 	const SELECTED_ITEM_SELECTOR = 'a[role="option"][aria-selected="true"]';
 	const HINT_ID = 'search-modal-queue-hint';
 
@@ -194,25 +162,69 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 	let observer = null;
 	let keydownListenerAttached = false;
 
-	// --- Helper Functions ---
+	function getSearchModal() {
+		return document.querySelector(SEARCH_MODAL_DIALOG_SELECTOR);
+	}
+
+	function getSearchListbox() {
+		return document.querySelector(SEARCH_MODAL_LISTBOX_SELECTOR);
+	}
+
+	function getAccessibilityBar() {
+		const modal = getSearchModal();
+		if (!modal) return null;
+
+		return Array.from(modal.querySelectorAll("div")).find((el) => {
+			if (el.querySelector(`#${HINT_ID}`)) return true;
+			const directParagraphs = Array.from(el.children).filter((child) => child.tagName === "P");
+			return directParagraphs.length >= 2 && directParagraphs.some((p) => p.querySelector("kbd"));
+		}) || null;
+	}
 
 	/**
 	 * @returns {object | null}
 	 */
 	function getSelectedUriAndTitle() {
-		const selectedItem = document.querySelector(SELECTED_ITEM_SELECTOR);
+		const selectedItem = getSearchModal()?.querySelector(SELECTED_ITEM_SELECTOR);
 		let uri = Object.create(null);
 		if (!selectedItem) return uri;
-
-		// const titleElement = selectedItem.querySelector('span.hidden-visually');
-
-		// console.log(LOG_PREFIX, selectedItem);
 
 		const href = selectedItem.getAttribute('href');
 		if (href) {
 			uri = SpicetifyAny.URI.from(href)
 		};
+		uri.label = selectedItem.querySelector(".hidden-visually")?.textContent?.trim();
 		return uri;
+	}
+
+	/**
+	 * @param {any} item
+	 */
+	function getArtistNames(item) {
+		return item?.artists?.map((/** @type {any} */ artist) => artist?.name).filter(Boolean).join(", ") || "Unknown artist";
+	}
+
+	/**
+	 * @param {string | null | undefined} fallback
+	 * @param {any} item
+	 * @param {string} type
+	 */
+	function getDisplayTitle(fallback, item, type) {
+		if (item?.name) {
+			const artists = getArtistNames(item);
+			return artists === "Unknown artist" ? `"${item.name}" (${type})` : `"${item.name}" by ${artists} (${type})`;
+		}
+
+		return fallback || `Selected ${type}`;
+	}
+
+	/**
+	 * @param {any[] | null | undefined} items
+	 */
+	function normalizePlayableItems(items) {
+		return (items || [])
+			.map((/** @type {any} */ item) => item?.item || item?.track || item)
+			.filter((/** @type {any} */ item) => item?.uri);
 	}
 
 	/** @param {any} showNotification */
@@ -220,7 +232,6 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		/** @type {any} */
 		const selectedInfo = getSelectedUriAndTitle();
 		if (!selectedInfo) {
-			// console.log(LOG_PREFIX, "No selected item found.");
 			return;
 		}
 
@@ -228,71 +239,63 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 			/** @type {any} */
 			let info
 			let tracks = []
-			let title = ''; // Initialize title
+			let title = '';
 
 			switch (selectedInfo.type) {
 				case 'track':
 					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${selectedInfo.id}`);
 					tracks = [{ uri: selectedInfo.toURI() }];
-					title = `“${info.name}” by ${info.artists[0].name} (Track)`;
+					title = getDisplayTitle(selectedInfo.label, info, "Track");
 					break;
-	
+
 				case 'episode':
 					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/episodes/${selectedInfo.id}`);
 					tracks = [{ uri: selectedInfo.toURI() }];
-					title = `“${info.name}” (Episode)`;
+					title = info?.name ? `"${info.name}" (Episode)` : selectedInfo.label || "Selected episode";
 					break;
-	
+
 				case 'album':
-					SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`).then(/** @param {any} info */ info => {
-						tracks = info.tracks.items
-						title = `“${info.name}” by ${info.artists[0].name} (Album) - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
-					});
+					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/albums/${selectedInfo.id}/`);
+					tracks = normalizePlayableItems(info?.tracks?.items);
+					title = `${getDisplayTitle(selectedInfo.label, info, "Album")} - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
 					break;
-	
+
 				case 'playlist':
 				case 'playlist-v2':
 					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${selectedInfo.id}/`);
-					await SpicetifyAny.Platform.PlaylistAPI.getContents(selectedInfo.toURI()).then(/** @param {any} data */ data => {
-						tracks = data.items
-						title = `“${info.name}” by ${info.owner.display_name} (Playlist) - ${tracks.length} track${tracks.length > 1 ? 's' : ''}`;
-					})
+					tracks = await fetchPages(`playlists/${selectedInfo.id}/items?limit=50`);
+					title = `"${info?.name || selectedInfo.label || "Selected playlist"}" by ${info?.owner?.display_name || "Unknown owner"} (Playlist) - ${tracks.length} item${tracks.length > 1 ? 's' : ''}`;
 					break;
-	
+
 				case 'show':
 					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/shows/${selectedInfo.id}/`);
 					tracks = await fetchPages(`shows/${selectedInfo.id}/episodes?limit=50`);
 					tracks.reverse()
-					title = `“${info.name}” (Show) - ${tracks.length} episode${tracks.length > 1 ? 's' : ''}`;
+					title = `"${info.name}" (Show) - ${tracks.length} episode${tracks.length > 1 ? 's' : ''}`;
 					break;
-	
+
 				case 'artist':
 					info = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/artists/${selectedInfo.id}/`);
 					try {
-						// Try playlist "This Is [Artist]"
-						const query = encodeURIComponent(`This Is ${info.name}`);
-						const search = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/search?q=${query}&type=playlist&limit=1`);
+						const query = encodeURIComponent(`This Is ${info?.name || selectedInfo.label || ""}`);
+						const search = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/search?q=${query}&type=playlist&limit=10`);
 						const thisIsPlaylist = search?.playlists?.items?.[0];
-				
+
 						if (thisIsPlaylist) {
-							const playlistId = thisIsPlaylist.id;
-							const playlistData = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${playlistId}`);
-							const playlistTracks = playlistData.tracks.items.map(/** @param {any} item */ item => item.track).filter(Boolean);
-				
-							tracks = playlistTracks;
-							title = `"${thisIsPlaylist.name}" by ${playlistData.owner.display_name} (Playlist) - ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`;
+							const playlistData = await SpicetifyAny.CosmosAsync.get(`https://api.spotify.com/v1/playlists/${thisIsPlaylist.id}`);
+							tracks = await fetchPages(`playlists/${thisIsPlaylist.id}/items?limit=50`);
+							title = `"${thisIsPlaylist.name}" by ${playlistData?.owner?.display_name || "Unknown owner"} (Playlist) - ${tracks.length} item${tracks.length !== 1 ? 's' : ''}`;
 							break;
 						}
 					} catch (error) {
-						console.error(LOG_PREFIX, `Error fetching "This Is ${info.name}" playlist`, error);
+						console.error(LOG_PREFIX, `Error fetching "This Is ${info?.name || selectedInfo.label}" playlist`, error);
 					}
-					tracks = await fetchPages(`artists/${selectedInfo.id}/top-tracks?market=from_token`);
-					title = `“${info.name}” (Artist) - ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`;
+					title = `"${info?.name || selectedInfo.label || "Selected artist"}" (Artist)`;
 					break;
 
 				default:
-					showNotification(LOG_PREFIX + ` Cannot add type “${selectedInfo.type}” to queue`, true, 5000)
-					console.error(LOG_PREFIX, `Cannot add type “${selectedInfo.type}” to queue`)
+					showNotification(LOG_PREFIX + ` Cannot add type "${selectedInfo.type}" to queue`, true, 5000)
+					console.error(LOG_PREFIX, `Cannot add type "${selectedInfo.type}" to queue`)
 					return
 			}
 
@@ -301,7 +304,7 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 				return
 			}
 
-			await Spicetify.addToQueue(tracks)
+			await Spicetify.addToQueue(normalizePlayableItems(tracks))
 			console.log(LOG_PREFIX, `${title} added to queue`)
 			showNotification(`${title} added to queue`, false)
 		} catch (err) {
@@ -310,7 +313,6 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		}
 	}
 
-	// helper to page through Spotify’s paginated endpoints
 	/** @param {string} u */
 	async function fetchPages(u) {
 		const allTracks = [];
@@ -320,7 +322,7 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 			try {
 				const data = await SpicetifyAny.CosmosAsync.get(url);
 				if (!data) break;
-				const tracks = data.tracks || (data.items && data.items.map(/** @param {any} i */ i => i.track || i)) || [];
+				const tracks = normalizePlayableItems(data.items || data.tracks?.items || data.tracks);
 				if (!tracks.length) break;
 				allTracks.push(...tracks);
 				url = data.next;
@@ -334,31 +336,24 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		return allTracks;
 	}
 
-	// --- Keyboard Event Listener ---
-
 	/** @param {KeyboardEvent} event */
 	function handleKeyDown(event) {
-		// Check if the search modal is still open
-		if (!document.querySelector(SEARCH_MODAL_SELECTOR)) {
-			// console.log(LOG_PREFIX, "Modal closed, ignoring keydown.");
-			removeKeyboardListener(); // Clean up listener if modal closed unexpectedly
+		if (!getSearchListbox()) {
+			removeKeyboardListener();
 			return;
 		}
 
-		// Check for Ctrl + Enter (or Command + Enter on Mac)
 		if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-			event.preventDefault(); // Prevent default 'Enter' action (opening item)
-			event.stopPropagation(); // Stop event from bubbling further
-			// console.log(LOG_PREFIX, "Ctrl+Enter combination captured.");
+			event.preventDefault();
+			event.stopPropagation();
 			handleCtrlEnter(showNotification);
 		}
 	}
 
 	function addKeyboardListener() {
 		if (!keydownListenerAttached) {
-			document.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+			document.addEventListener('keydown', handleKeyDown, true);
 			keydownListenerAttached = true;
-			// console.log(LOG_PREFIX, "Keyboard listener attached.");
 		}
 	}
 
@@ -366,33 +361,52 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		if (keydownListenerAttached) {
 			document.removeEventListener('keydown', handleKeyDown, true);
 			keydownListenerAttached = false;
-			// console.log(LOG_PREFIX, "Keyboard listener removed.");
 		}
 	}
 
-	// --- UI Modification ---
+	/**
+	 * @param {Element} bar
+	 */
+	function normalizeMacShortcutGlyphs(bar) {
+		if (!navigator.platform.toUpperCase().includes("MAC")) return;
+
+		const kbds = Array.from(bar.querySelectorAll("kbd"));
+		kbds.forEach((kbd) => {
+			if (["Cmd", "Command"].includes(kbd.textContent?.trim() || "")) {
+				kbd.textContent = "⌘";
+			}
+		});
+
+		kbds.forEach((kbd) => {
+			if (kbd.textContent?.trim() === "Shift") {
+				const height = kbd.getBoundingClientRect().height;
+				kbd.textContent = "⇧";
+				kbd.style.fontFamily = "Arial, Helvetica, sans-serif";
+				kbd.style.fontSize = "1.1em";
+				kbd.style.height = `${height}px`;
+				kbd.style.minHeight = `${height}px`;
+			}
+		});
+	}
 
 	function addQueueHint() {
-		const bar = document.querySelector(ACCESSIBILITY_BAR_SELECTOR);
+		const bar = getAccessibilityBar();
 		if (!bar || document.getElementById(HINT_ID)) return;
 
-		// Find any existing <p> in the bar to copy its style and class list
 		const sample = bar.querySelector("p");
 		if (!sample) return;
 
 		const queueHint = document.createElement("p");
 		queueHint.id = HINT_ID;
 
-		// Copy classes, data attributes, and inline styles from existing hint
 		queueHint.className = sample.className;
 		queueHint.dataset.encoreId = sample.dataset.encoreId;
 		if (sample.style.cssText) queueHint.style.cssText = sample.style.cssText;
 
-		// Try to clone an existing <kbd> to preserve its styling
 		const sampleKbd = sample.querySelector("kbd") || document.createElement("kbd");
 
 		const ctrlKbd = sampleKbd.cloneNode(false);
-		ctrlKbd.textContent = navigator.platform.toUpperCase().includes("MAC") ? "Cmd" : "Ctrl";
+		ctrlKbd.textContent = navigator.platform.toUpperCase().includes("MAC") ? "⌘" : "Ctrl";
 
 		const enterKbd = sampleKbd.cloneNode(false);
 		enterKbd.textContent = "Enter";
@@ -400,6 +414,7 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		queueHint.append(ctrlKbd, enterKbd, document.createTextNode(" Queue"));
 
 		bar.appendChild(queueHint);
+		normalizeMacShortcutGlyphs(bar);
 	}
 
 
@@ -407,56 +422,40 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		const hint = document.getElementById(HINT_ID);
 		if (hint) {
 			hint.remove();
-			// console.log(LOG_PREFIX, "'Queue' hint removed.");
 		}
 	}
 
-
-	// --- Mutation Observer ---
-
 	function observeModal() {
 		if (observer) {
-			observer.disconnect(); // Disconnect previous observer if any
-			// console.log(LOG_PREFIX, "Disconnected existing observer.");
+			observer.disconnect();
 		}
 
 		observer = new MutationObserver((mutationsList) => {
 			for (const mutation of mutationsList) {
 				if (mutation.type === 'childList') {
-					// Check if the modal was added by checking added nodes
 					const modalAppeared = Array.from(mutation.addedNodes).some(node => {
-						// Check if the node itself is an Element AND (it matches the selector OR it contains the selector)
 						return node.nodeType === Node.ELEMENT_NODE &&
-							(/** @type {Element} */ (node).matches(SEARCH_MODAL_SELECTOR) || /** @type {Element} */ (node).querySelector(SEARCH_MODAL_SELECTOR));
+							(/** @type {Element} */ (node).matches(SEARCH_MODAL_LISTBOX_SELECTOR) || /** @type {Element} */ (node).querySelector(SEARCH_MODAL_LISTBOX_SELECTOR));
 					});
 
-					// Check if the modal was removed by checking removed nodes
 					const modalDisappeared = Array.from(mutation.removedNodes).some(node => {
-						// Check if the node itself is an Element AND (it contained the selector)
-						// This is harder to check definitively after removal, often checking if the selector *no longer exists* is better
 						return node.nodeType === Node.ELEMENT_NODE &&
-							(/** @type {Element} */ (node).querySelector(SEARCH_MODAL_SELECTOR) || /** @type {Element} */ (node).matches(SEARCH_MODAL_SELECTOR));
+							(/** @type {Element} */ (node).querySelector(SEARCH_MODAL_LISTBOX_SELECTOR) || /** @type {Element} */ (node).matches(SEARCH_MODAL_LISTBOX_SELECTOR));
 					});
 
-					// Refined check: Does the modal exist now?
-					const modalExists = document.querySelector(SEARCH_MODAL_SELECTOR);
+					const modalExists = getSearchListbox();
 
-					if (modalExists && (modalAppeared || !keydownListenerAttached)) { // If it exists AND (it just appeared OR listener isn't attached yet)
-						// console.log(LOG_PREFIX, "Search modal detected or confirmed present.");
-						// Use setTimeout to ensure elements are fully rendered after mutation
+					if (modalExists && (modalAppeared || !keydownListenerAttached)) {
 						setTimeout(() => {
-							// Double check existence inside timeout
-							if (document.querySelector(SEARCH_MODAL_SELECTOR)) {
+							if (getSearchListbox()) {
 								addQueueHint();
 								addKeyboardListener();
 							} else {
-								// console.log(LOG_PREFIX, "Modal disappeared before timeout callback.");
 								removeKeyboardListener();
 								removeQueueHint();
 							}
-						}, 150); // Slightly longer delay just in case
-					} else if (!modalExists && keydownListenerAttached) { // If it doesn't exist AND listener *was* attached
-						// console.log(LOG_PREFIX, "Search modal confirmed closed.");
+						}, 150);
+					} else if (!modalExists && keydownListenerAttached) {
 						removeKeyboardListener();
 						removeQueueHint();
 					}
@@ -465,10 +464,8 @@ const SpicetifyAny = /** @type {any} */ (Spicetify);
 		});
 
 		observer.observe(document.body, { childList: true, subtree: true });
-		// console.log(LOG_PREFIX, "Mutation observer started.");
 	}
 
-	// --- Initial Execution ---
 	observeModal();
 
 })();

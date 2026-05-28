@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "node aleha-loader/scripts/dev-watch.cjs",
+    "watch": "node aleha-loader/scripts/dev-watch.cjs",
+    "watch:spotify-only": "spicetify watch -le"
+  }
+}

@@ -1,6 +1,8 @@
 {
   "private": true,
   "scripts": {
+    "build:online": "npm --prefix aleha-loader run build",
+    "build:local": "npm --prefix aleha-loader run build-local",
     "dev": "node aleha-loader/scripts/dev-watch.cjs",
     "watch": "node aleha-loader/scripts/dev-watch.cjs",
     "watch:spotify-only": "spicetify watch -le"

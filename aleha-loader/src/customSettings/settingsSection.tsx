@@ -242,23 +242,21 @@ class SettingsSection {
               }}
             />
           ) : props.field.type === "button" ? (
-            <span>
-              <button
-                id={id}
-                className="Button-sc-y0gtbx-0 Button-buttonSecondary-small-useBrowserDefaultFocusStyle encore-text-body-small-bold x-settings-button"
-                {...props.field.events}
-                onClick={(e) => {
-                  setValue();
-                  const onClick = (props.field as ISettingsFieldButton).events
-                    ?.onClick;
-                  if (onClick) onClick(e);
-                }}
-                data-encore-id="buttonSecondary"
-                type="button"
-              >
-                {value}
-              </button>
-            </span>
+            <button
+              id={id}
+              className="encore-text-body-small-bold e-10451-legacy-button--small e-10451-legacy-button-secondary--text-base encore-internal-color-text-base e-10451-legacy-button e-10451-legacy-button-secondary e-10451-overflow-wrap-anywhere x-settings-button"
+              {...props.field.events}
+              onClick={(e) => {
+                setValue();
+                const onClick = (props.field as ISettingsFieldButton).events
+                  ?.onClick;
+                if (onClick) onClick(e);
+              }}
+              data-encore-id="buttonSecondary"
+              type="button"
+            >
+              {value}
+            </button>
           ) : props.field.type === "toggle" ? (
             <label className="x-settings-secondColumn x-toggle-wrapper">
               <input

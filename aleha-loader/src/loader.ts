@@ -20,6 +20,9 @@ const API_ROOT = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${
 const RAW_ROOT = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}/${EXTENSION}/extensions`;
 
 const STORE_KEY = 'LoaderStates';
+const SOURCE_KEY = 'LoaderUseLocalSource';
+const CACHE_KEY = 'LoaderCachedExtensions';
+const CACHE_TIME_KEY = 'LoaderCachedExtensionsFetchedAt';
 
 function slug(name: string) {
   return name.toLowerCase().replace(/\s+/g, '-');
@@ -33,6 +36,58 @@ function readSavedStates(): Record<string, boolean> {
     console.warn('[Loader] ignored invalid saved extension states', e);
     return {};
   }
+}
+
+function readSourcePreference(): boolean {
+  const saved = localStorage.getItem(SOURCE_KEY);
+
+  if (saved === null) {
+    return LOCAL_EXTENSION_MODE;
+  }
+
+  return saved === 'true';
+}
+
+function writeSourcePreference(useLocalSource: boolean) {
+  localStorage.setItem(SOURCE_KEY, String(useLocalSource));
+}
+
+function readCachedExtensions(): ExtensionMeta[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '[]');
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      ext => typeof ext?.name === 'string' && typeof ext?.code === 'string',
+    );
+  } catch (e) {
+    console.warn('[Loader] ignored invalid cached extensions', e);
+    return [];
+  }
+}
+
+function writeCachedExtensions(extensions: ExtensionMeta[]) {
+  localStorage.setItem(CACHE_KEY, JSON.stringify(extensions));
+  localStorage.setItem(CACHE_TIME_KEY, new Date().toISOString());
+}
+
+function formatLastFetched() {
+  const fetchedAt = localStorage.getItem(CACHE_TIME_KEY);
+
+  if (!fetchedAt) {
+    return 'never';
+  }
+
+  const date = new Date(fetchedAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown';
+  }
+
+  return date.toLocaleString();
 }
 
 async function discoverRemoteExtensions(): Promise<ExtensionMeta[]> {
@@ -56,12 +111,39 @@ async function discoverRemoteExtensions(): Promise<ExtensionMeta[]> {
     }));
 }
 
-async function discoverExtensions(): Promise<ExtensionMeta[]> {
-  if (LOCAL_EXTENSION_MODE) {
+async function discoverOnlineExtensions(): Promise<ExtensionMeta[]> {
+  const extensions = await Promise.all(
+    (await discoverRemoteExtensions()).map(async ext => ({
+      name: ext.name,
+      code: await getExtensionCode(ext),
+    })),
+  );
+
+  writeCachedExtensions(extensions);
+  return extensions;
+}
+
+async function discoverLocalOrCachedExtensions(): Promise<ExtensionMeta[]> {
+  if (localExtensions.length) {
     return localExtensions;
   }
 
-  return discoverRemoteExtensions();
+  const cachedExtensions = readCachedExtensions();
+
+  if (cachedExtensions.length) {
+    return cachedExtensions;
+  }
+
+  console.warn('[Loader] no bundled or cached extensions found; fetching online extensions');
+  return discoverOnlineExtensions();
+}
+
+async function discoverExtensions(useLocalSource: boolean): Promise<ExtensionMeta[]> {
+  if (useLocalSource) {
+    return discoverLocalOrCachedExtensions();
+  }
+
+  return discoverOnlineExtensions();
 }
 
 async function getExtensionCode(ext: ExtensionMeta): Promise<string> {
@@ -88,20 +170,50 @@ export default async function Loader(): Promise<void> {
   }
 
   const saved = readSavedStates();
+  let useLocalSource = readSourcePreference();
   let extensions: ExtensionMeta[] = [];
 
   try {
-    extensions = await discoverExtensions();
+    extensions = await discoverExtensions(useLocalSource);
   } catch (e) {
     console.error('[Loader] failed to discover extensions', e);
     return;
   }
 
   console.log(
-    `[Loader] using ${LOCAL_EXTENSION_MODE ? 'local' : 'remote'} extension source (${extensions.length} extension(s))`,
+    `[Loader] using ${useLocalSource ? 'local/cached' : 'online'} extension source (${extensions.length} extension(s))`,
   );
 
   const section = new SettingsSection(`${GH_USER} Loader`, 'ale-loader-settings'); 
+
+  section.addToggle(
+    'use-local-source',
+    'Use local/cached extensions',
+    useLocalSource,
+    undefined,
+    {
+      onChange: (e: ChangeEvent<HTMLInputElement>) => {
+        useLocalSource = e.currentTarget.checked;
+        writeSourcePreference(useLocalSource);
+      },
+    },
+  );
+
+  section.addButton(
+    'refetch-online',
+    `Refetch online extensions (last fetched: ${formatLastFetched()})`,
+    'Refetch',
+    async () => {
+      try {
+        await discoverOnlineExtensions();
+        Spicetify.showNotification?.('[Loader] Refetched online extensions. Reloading...');
+        window.location.reload();
+      } catch (e) {
+        console.error('[Loader] failed to refetch online extensions', e);
+        Spicetify.showNotification?.('[Loader] Failed to refetch online extensions', true);
+      }
+    },
+  );
 
   extensions.forEach(ext => {
     const id = slug(ext.name);
